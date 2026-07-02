@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MARWIS Road-Weather Survey — Belgrade 2026-07-02</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --hdr-h: 52px;
+    --panel-bg: rgba(255,255,255,0.96);
+    --accent: #1565c0;
+    --sat-purple: #8e24aa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+
+  /* ---------- header ---------- */
+  #hdr {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--hdr-h); z-index: 1200;
+    background: #10304a; color: #fff; display: flex; align-items: center;
+    gap: 14px; padding: 0 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  #hdr h1 { font-size: 15px; margin: 0; font-weight: 600; white-space: nowrap; }
+  #hdr .stats { font-size: 12px; color: #cfe3f5; display: flex; gap: 14px; flex-wrap: wrap; overflow: hidden; }
+  #hdr .stats b { color: #fff; }
+  #infoBtn {
+    margin-left: auto; background: #1e4a70; color: #fff; border: 1px solid #4a7ba6;
+    border-radius: 50%; width: 28px; height: 28px; font-size: 15px; cursor: pointer; flex: 0 0 auto;
+  }
+  #infoBtn:hover { background: #2a5f8f; }
+
+  #map { position: fixed; top: var(--hdr-h); bottom: 0; left: 0; right: 0; }
+
+  /* ---------- control panel ---------- */
+  #panelToggle {
+    position: fixed; top: calc(var(--hdr-h) + 10px); right: 10px; z-index: 1100;
+    background: #fff; border: 2px solid rgba(0,0,0,0.25); border-radius: 4px;
+    padding: 5px 10px; font-size: 13px; cursor: pointer; font-weight: 600;
+  }
+  #panel {
+    position: fixed; top: calc(var(--hdr-h) + 46px); right: 10px; z-index: 1100;
+    width: 265px; max-height: calc(100% - var(--hdr-h) - 66px); overflow-y: auto;
+    background: var(--panel-bg); border: 1px solid #bbb; border-radius: 6px;
+    padding: 10px 12px; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  #panel.hidden { display: none; }
+  #panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+              color: #555; margin: 10px 0 4px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+  #panel h2:first-child { margin-top: 0; }
+  #panel label { display: block; margin: 3px 0; cursor: pointer; line-height: 1.35; }
+  #panel input[type=radio], #panel input[type=checkbox] { margin-right: 5px; vertical-align: -1px; }
+
+  /* dual-handle slider: two overlaid native ranges */
+  #timeWrap { position: relative; height: 26px; margin: 8px 0 2px; }
+  #timeWrap input[type=range] {
+    position: absolute; left: 0; top: 0; width: 100%; margin: 0;
+    -webkit-appearance: none; appearance: none; background: none; pointer-events: none; height: 26px;
+  }
+  #timeWrap input[type=range]::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+  #timeWrap input[type=range]::-moz-range-track { height: 4px; background: transparent; }
+  #timeWrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; margin-top: -6px;
+    border-radius: 50%; background: var(--accent); border: 2px solid #fff;
+    box-shadow: 0 0 3px rgba(0,0,0,0.5); cursor: pointer;
+  }
+  #timeWrap input[type=range]::-moz-range-thumb {
+    pointer-events: auto; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); border: 2px solid #fff;
+    box-shadow: 0 0 3px rgba(0,0,0,0.5); cursor: pointer;
+  }
+  #timeTrack { position: absolute; top: 11px; left: 0; right: 0; height: 4px;
+               background: #ccc; border-radius: 2px; }
+  #timeFill { position: absolute; top: 11px; height: 4px; background: var(--accent); border-radius: 2px; }
+  #timeLabel { font-size: 12px; color: #333; text-align: center; }
+
+  /* ---------- legend ---------- */
+  .legend {
+    background: var(--panel-bg); padding: 8px 10px; border-radius: 6px;
+    border: 1px solid #bbb; box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+    font: 12px/1.4 "Segoe UI", system-ui, sans-serif; max-width: 220px;
+  }
+  .legend .ltitle { font-weight: 600; margin-bottom: 4px; }
+  .legend .bar { height: 12px; border-radius: 2px; border: 1px solid #999; }
+  .legend .barlab { display: flex; justify-content: space-between; color: #444; font-size: 11px; }
+  .legend .cat { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .legend .sw { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.3); flex: 0 0 auto; }
+  .legend .satrow { margin-top: 6px; padding-top: 5px; border-top: 1px dashed #bbb; }
+  .legend .satdot { width: 10px; height: 10px; border-radius: 50%; background: #ddd;
+                    border: 3px solid var(--sat-purple); flex: 0 0 auto; }
+
+  /* ---------- note markers ---------- */
+  .note-icon { font-size: 22px; line-height: 22px; text-align: center;
+               text-shadow: 0 0 3px #fff, 0 1px 2px rgba(0,0,0,0.6); }
+  .note-icon.star { color: #f4b400; font-size: 26px; line-height: 26px; }
+  .note-popup .sr { font-style: italic; }
+  .note-popup .en { margin-top: 4px; }
+  .note-popup .nt { margin-top: 5px; color: #666; font-size: 11px; }
+
+  /* ---------- popup ---------- */
+  .pt-popup table { border-collapse: collapse; font-size: 12px; }
+  .pt-popup td { padding: 1px 6px 1px 0; }
+  .pt-popup td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .pt-popup .flag { display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 11px;
+                    color: #fff; margin-left: 4px; }
+  .pt-popup .flag.sat { background: var(--sat-purple); }
+  .pt-popup .flag.gap { background: #b26a00; }
+  .pt-popup .hd { font-weight: 600; margin-bottom: 3px; }
+
+  /* ---------- modal ---------- */
+  #modalBack {
+    display: none; position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0,0,0,0.55); align-items: center; justify-content: center; padding: 16px;
+  }
+  #modalBack.open { display: flex; }
+  #modal {
+    background: #fff; border-radius: 8px; max-width: 520px; max-height: 85vh; overflow-y: auto;
+    padding: 18px 22px; font-size: 14px; line-height: 1.5; box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  #modal h3 { margin-top: 0; }
+  #modal button { margin-top: 10px; padding: 6px 16px; font-size: 13px; cursor: pointer;
+                  background: var(--accent); color: #fff; border: 0; border-radius: 4px; }
+
+  /* ---------- no-data message ---------- */
+  #nodata {
+    display: none; position: fixed; inset: var(--hdr-h) 0 0 0; z-index: 1500;
+    background: #f4f6f8; align-items: center; justify-content: center; padding: 20px; text-align: center;
+  }
+  #nodata div { max-width: 460px; font-size: 15px; color: #333; line-height: 1.6; }
+  #nodata code { background: #e2e6ea; padding: 1px 5px; border-radius: 3px; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 640px) {
+    #hdr h1 { font-size: 13px; }
+    #hdr .stats { font-size: 10px; gap: 8px; }
+    #hdr .stats .hide-sm { display: none; }
+    #panel { width: calc(100vw - 20px); max-height: 45vh; }
+    .legend { max-width: 160px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<header id="hdr">
+  <h1>MARWIS Road-Weather Survey</h1>
+  <div class="stats" id="hdrStats"></div>
+  <button id="infoBtn" title="About / sensor caveats" aria-label="Info">i</button>
+</header>
+
+<div id="map"></div>
+
+<button id="panelToggle" aria-label="Toggle filter panel">&#9776; Filters</button>
+<div id="panel">
+  <h2>Channel</h2>
+  <div id="channelBox"></div>
+  <h2>Sessions</h2>
+  <div id="sessBox"></div>
+  <h2>Time window</h2>
+  <div id="timeWrap">
+    <div id="timeTrack"></div><div id="timeFill"></div>
+    <input type="range" id="tLo"><input type="range" id="tHi">
+  </div>
+  <div id="timeLabel"></div>
+</div>
+
+<div id="nodata"><div>
+  <b>No campaign data found.</b><br><br>
+  <code>window.CAMPAIGN</code> is not defined. Make sure <code>data.js</code> sits next to
+  <code>index.html</code> and is referenced as <code>&lt;script src="./data.js"&gt;</code>.
+</div></div>
+
+<div id="modalBack">
+  <div id="modal">
+    <h3>About this survey</h3>
+    <p>Lufft MARWIS road-weather sensor + phone GPS, driven through north-east Belgrade
+       during a rain event on <span id="mDate"></span>. Times shown are local
+       (UTC<span id="mTz"></span>).</p>
+    <h3>Sensor saturation caveats</h3>
+    <ul>
+      <li><b>Water film height clips at 6000&nbsp;&micro;m.</b> The MARWIS optical sensor
+          cannot report more than ~6&nbsp;mm of water; over deep puddles it typically reads
+          only about 1&nbsp;mm because it only sees the top film. Values at 6000&nbsp;&micro;m
+          are a lower bound, not a measurement.</li>
+      <li><b>Friction is bounded to 0.55&ndash;0.82.</b> Readings at the 0.55 floor are
+          censored: real friction may be lower (e.g. in standing water).</li>
+      <li>Points affected by either limit are flagged <b>saturated</b> and drawn with a
+          purple ring on the map.</li>
+      <li>Points without GPS coverage (or with low-confidence forward-filled positions) are
+          flagged <b>gap</b> and are not drawn (or drawn with reduced confidence).</li>
+    </ul>
+    <button id="modalClose">Close</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="./data.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- guard ---------- */
+  if (!window.CAMPAIGN || !window.CAMPAIGN.points || !window.CAMPAIGN.columns) {
+    document.getElementById("nodata").style.display = "flex";
+    document.getElementById("panel").classList.add("hidden");
+    document.getElementById("panelToggle").style.display = "none";
+    return;
+  }
+  var C = window.CAMPAIGN;
+  var META = C.meta || {};
+
+  /* column indices from the contract's columns array */
+  var CI = {};
+  C.columns.forEach(function (c, i) { CI[c] = i; });
+
+  /* ---------- time helpers ---------- */
+  var tzStr = META.tz_display || "+00:00";
+  var tzm = /^([+-])(\d\d):(\d\d)$/.exec(tzStr);
+  var tzOffsetSec = tzm ? (tzm[1] === "-" ? -1 : 1) * (parseInt(tzm[2], 10) * 3600 + parseInt(tzm[3], 10) * 60) : 0;
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function localHMS(t) {
+    var d = new Date((t + tzOffsetSec) * 1000);
+    return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds());
+  }
+  function localHM(t) {
+    var d = new Date((t + tzOffsetSec) * 1000);
+    return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes());
+  }
+
+  /* ---------- header ---------- */
+  document.getElementById("hdrStats").innerHTML =
+    "<span><b>" + (META.date || "") + "</b></span>" +
+    "<span><b>" + (META.distance_km != null ? META.distance_km.toFixed(1) : "?") + " km</b> driven</span>" +
+    "<span class='hide-sm'><b>" + (META.total_points != null ? META.total_points : C.points.length) +
+      "</b> points, <b>" + (META.georeferenced != null ? META.georeferenced : "?") + "</b> georeferenced</span>";
+  document.getElementById("mDate").textContent = META.date || "";
+  document.getElementById("mTz").textContent = tzStr;
+
+  /* ---------- map & base layers ---------- */
+  var map = L.map("map", { zoomControl: true });
+  var osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors"
+  }).addTo(map);
+  var esri = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19,
+    attribution: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+  });
+
+  /* ---------- color ramps ---------- */
+  function hex2rgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
+  function lerpRamp(stops, u) {
+    if (u <= 0) return stops[0];
+    if (u >= 1) return stops[stops.length - 1];
+    var x = u * (stops.length - 1), i = Math.floor(x), f = x - i;
+    var a = hex2rgb(stops[i]), b = hex2rgb(stops[i + 1]);
+    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * f) + "," +
+                    Math.round(a[1] + (b[1] - a[1]) * f) + "," +
+                    Math.round(a[2] + (b[2] - a[2]) * f) + ")";
+  }
+  function cssGradient(stops) {
+    var parts = [];
+    for (var i = 0; i <= 10; i++) parts.push(lerpRamp(stops, i / 10));
+    return "linear-gradient(to right," + parts.join(",") + ")";
+  }
+
+  var RAMP_WFH  = ["#ffffcc", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"];
+  var RAMP_FRIC = ["#d73027", "#fc8d59", "#fee08b", "#a6d96a", "#1a9850"]; /* low=red */
+  var RAMP_RST  = ["#313695", "#74add1", "#ffffbf", "#f46d43", "#a50026"];
+  var COND_COLORS = { 0: "#4daf4a", 1: "#ff9f1c", 2: "#2166ac" };
+  var COND_NAMES  = { 0: "dry", 1: "damp", 2: "wet" };
+  var SAT_COLOR = "#8e24aa";
+  var LOG_MAX = Math.log10(6001);
+
+  /* rst data range for the linear ramp */
+  var rstMin = Infinity, rstMax = -Infinity;
+  C.points.forEach(function (p) {
+    var v = p[CI.rst];
+    if (v != null) { if (v < rstMin) rstMin = v; if (v > rstMax) rstMax = v; }
+  });
+  if (!isFinite(rstMin)) { rstMin = 0; rstMax = 1; }
+  if (rstMax - rstMin < 0.5) rstMax = rstMin + 0.5;
+
+  var CHANNELS = {
+    wfh: {
+      label: "Water film height (log, 0–6000 µm)",
+      color: function (p) {
+        var v = Math.max(0, Math.min(6000, p[CI.wfh]));
+        return lerpRamp(RAMP_WFH, Math.log10(1 + v) / LOG_MAX);
+      },
+      legend: { type: "bar", ramp: RAMP_WFH, lo: "0 µm", hi: "6000 µm (log)" }
+    },
+    fric: {
+      label: "Friction (0.55–0.82, red = slippery)",
+      color: function (p) {
+        var u = (p[CI.fric] - 0.55) / (0.82 - 0.55);
+        return lerpRamp(RAMP_FRIC, Math.max(0, Math.min(1, u)));
+      },
+      legend: { type: "bar", ramp: RAMP_FRIC, lo: "0.55 (slippery)", hi: "0.82 (grippy)" }
+    },
+    cond: {
+      label: "Road condition (dry / damp / wet)",
+      color: function (p) { return COND_COLORS[p[CI.cond]] || "#999"; },
+      legend: { type: "cat", items: [[COND_COLORS[0], "dry"], [COND_COLORS[1], "damp"], [COND_COLORS[2], "wet"]] }
+    },
+    rst: {
+      label: "Road surface temp (°C)",
+      color: function (p) {
+        var u = (p[CI.rst] - rstMin) / (rstMax - rstMin);
+        return lerpRamp(RAMP_RST, Math.max(0, Math.min(1, u)));
+      },
+      legend: { type: "bar", ramp: RAMP_RST, lo: null, hi: null } /* labels set dynamically */
+    }
+  };
+  var currentChannel = "wfh";
+
+  /* ---------- track markers (shared canvas renderer) ---------- */
+  var canvasRenderer = L.canvas({ padding: 0.4 });
+  var trackLayer = L.layerGroup().addTo(map);
+  var entries = [];   /* {p: row, m: circleMarker, shown: bool} */
+  var bounds = [];
+
+  function popupHtml(p) {
+    var sessIdx = p[CI.sess];
+    var sess = (META.sessions && META.sessions[sessIdx]) || { id: "?" };
+    var flags = "";
+    if (p[CI.sat]) flags += "<span class='flag sat'>saturated</span>";
+    if (p[CI.gap]) flags += "<span class='flag gap'>gap</span>";
+    function row(k, v) { return "<tr><td>" + k + "</td><td>" + v + "</td></tr>"; }
+    return "<div class='pt-popup'>" +
+      "<div class='hd'>" + localHMS(p[CI.t]) + " local (UTC" + tzStr + ")" + flags + "</div>" +
+      "<table>" +
+      row("Session", sess.id) +
+      row("Water film height", p[CI.wfh].toFixed(1) + " µm") +
+      row("Water film (surface)", p[CI.wfs].toFixed(1) + " µm") +
+      row("Friction", p[CI.fric].toFixed(3)) +
+      row("Road condition", (COND_NAMES[p[CI.cond]] || p[CI.cond])) +
+      row("Road surface temp", p[CI.rst].toFixed(2) + " °C") +
+      row("Ambient temp", p[CI.amb].toFixed(2) + " °C") +
+      row("Dew point", p[CI.dew].toFixed(2) + " °C") +
+      row("Rel. humidity @ road T", p[CI.rh].toFixed(1) + " %") +
+      row("GPS speed", p[CI.spd] != null ? (p[CI.spd] * 3.6).toFixed(1) + " km/h" : "–") +
+      row("GPS horiz. accuracy", p[CI.hacc] != null ? p[CI.hacc].toFixed(1) + " m" : "–") +
+      "</table></div>";
+  }
+
+  C.points.forEach(function (p) {
+    var lat = p[CI.lat], lon = p[CI.lon];
+    if (lat == null || lon == null) return;   /* not georeferenceable */
+    bounds.push([lat, lon]);
+    var m = L.circleMarker([lat, lon], {
+      renderer: canvasRenderer, radius: 4.5,
+      weight: 1, opacity: 0.9, fillOpacity: 0.85,
+      color: "#333", fillColor: "#999"
+    });
+    (function (pp) {
+      m.on("click", function (e) {
+        L.popup({ maxWidth: 300 }).setLatLng(e.latlng).setContent(popupHtml(pp)).openOn(map);
+      });
+    })(p);
+    entries.push({ p: p, m: m, shown: false });
+  });
+
+  function styleMarker(en) {
+    var fill = CHANNELS[currentChannel].color(en.p);
+    if (en.p[CI.sat]) {
+      en.m.setStyle({ fillColor: fill, color: SAT_COLOR, weight: 2.5, opacity: 1 });
+    } else {
+      en.m.setStyle({ fillColor: fill, color: "rgba(30,30,30,0.45)", weight: 1, opacity: 0.9 });
+    }
+  }
+
+  /* ---------- notes ---------- */
+  var notesLayer = L.layerGroup();
+  (C.notes || []).forEach(function (n) {
+    if (n.lat == null || n.lon == null) return;
+    bounds.push([n.lat, n.lon]);
+    var icon = L.divIcon({
+      className: "",
+      html: n.star ? "<div class='note-icon star'>★</div>" : "<div class='note-icon'>📍</div>",
+      iconSize: [26, 26], iconAnchor: [13, 13]
+    });
+    L.marker([n.lat, n.lon], { icon: icon, zIndexOffset: 500 })
+      .bindPopup("<div class='note-popup'>" +
+                 "<div class='sr'>„" + n.sr + "”</div>" +
+                 "<div class='en'>" + n.en + "</div>" +
+                 "<div class='nt'>" + localHMS(n.t) + " local (UTC" + tzStr + ")" +
+                 (n.star ? " · ★ starred" : "") + "</div></div>")
+      .addTo(notesLayer);
+  });
+  notesLayer.addTo(map);
+
+  L.control.layers(
+    { "OpenStreetMap": osm, "Esri World Imagery": esri },
+    { "Track points": trackLayer, "Field notes": notesLayer },
+    { collapsed: true }
+  ).addTo(map);
+
+  function fitAll() {
+    if (bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+    else map.setView([44.82, 20.46], 12);
+  }
+  fitAll();
+  /* container may have had no size at init (e.g. embedded/late layout) — refit once ready */
+  window.addEventListener("load", function () {
+    setTimeout(function () { map.invalidateSize(); fitAll(); }, 100);
+  });
+
+  /* ---------- legend control ---------- */
+  var legendCtl = L.control({ position: "bottomright" });
+  var legendDiv;
+  legendCtl.onAdd = function () {
+    legendDiv = L.DomUtil.create("div", "legend");
+    L.DomEvent.disableClickPropagation(legendDiv);
+    renderLegend();
+    return legendDiv;
+  };
+  legendCtl.addTo(map);
+
+  function renderLegend() {
+    if (!legendDiv) return;
+    var ch = CHANNELS[currentChannel];
+    var html = "<div class='ltitle'>" + ch.label + "</div>";
+    if (ch.legend.type === "bar") {
+      var lo = ch.legend.lo, hi = ch.legend.hi;
+      if (currentChannel === "rst") { lo = rstMin.toFixed(1) + " °C"; hi = rstMax.toFixed(1) + " °C"; }
+      html += "<div class='bar' style='background:" + cssGradient(ch.legend.ramp) + "'></div>" +
+              "<div class='barlab'><span>" + lo + "</span><span>" + hi + "</span></div>";
+    } else {
+      ch.legend.items.forEach(function (it) {
+        html += "<div class='cat'><span class='sw' style='background:" + it[0] + "'></span>" + it[1] + "</div>";
+      });
+    }
+    html += "<div class='cat satrow'><span class='satdot'></span>saturated (wfh ≥ 6000 µm or µ ≤ 0.55)</div>";
+    legendDiv.innerHTML = html;
+  }
+
+  /* ---------- channel selector ---------- */
+  var chBox = document.getElementById("channelBox");
+  Object.keys(CHANNELS).forEach(function (key) {
+    var lab = document.createElement("label");
+    var r = document.createElement("input");
+    r.type = "radio"; r.name = "channel"; r.value = key; r.checked = (key === currentChannel);
+    r.addEventListener("change", function () {
+      currentChannel = key;
+      entries.forEach(function (en) { if (en.shown) styleMarker(en); });
+      renderLegend();
+    });
+    lab.appendChild(r);
+    lab.appendChild(document.createTextNode(CHANNELS[key].label));
+    chBox.appendChild(lab);
+  });
+
+  /* ---------- session filter ---------- */
+  var sessOn = {};
+  var sessBox = document.getElementById("sessBox");
+  (META.sessions || []).forEach(function (s, i) {
+    sessOn[i] = true;
+    var lab = document.createElement("label");
+    var cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = true;
+    cb.addEventListener("change", function () { sessOn[i] = cb.checked; applyFilters(); });
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(
+      s.id + " — " + (s.label || "") + " (" + s.n + ")"));
+    sessBox.appendChild(lab);
+  });
+
+  /* ---------- time slider ---------- */
+  var tMin = Infinity, tMax = -Infinity;
+  C.points.forEach(function (p) {
+    var t = p[CI.t];
+    if (t < tMin) tMin = t; if (t > tMax) tMax = t;
+  });
+  if (!isFinite(tMin)) { tMin = 0; tMax = 1; }
+  var tLoEl = document.getElementById("tLo"), tHiEl = document.getElementById("tHi");
+  [tLoEl, tHiEl].forEach(function (el) {
+    el.min = Math.floor(tMin); el.max = Math.ceil(tMax); el.step = 1;
+  });
+  tLoEl.value = Math.floor(tMin); tHiEl.value = Math.ceil(tMax);
+
+  var timeFill = document.getElementById("timeFill");
+  var timeLabel = document.getElementById("timeLabel");
+  function readSlider() {
+    var lo = +tLoEl.value, hi = +tHiEl.value;
+    if (lo > hi) { var tmp = lo; lo = hi; hi = tmp; }
+    return [lo, hi];
+  }
+  function updateTimeUI() {
+    var lh = readSlider(), lo = lh[0], hi = lh[1];
+    var span = (+tHiEl.max) - (+tLoEl.min) || 1;
+    timeFill.style.left  = (100 * (lo - tLoEl.min) / span) + "%";
+    timeFill.style.width = (100 * (hi - lo) / span) + "%";
+    timeLabel.textContent = localHM(lo) + " – " + localHM(hi) + "  (local, UTC" + tzStr + ")";
+  }
+  var sliderTimer = null;
+  function onSlide() {
+    updateTimeUI();
+    if (sliderTimer) clearTimeout(sliderTimer);
+    sliderTimer = setTimeout(applyFilters, 60);   /* debounce canvas redraws */
+  }
+  tLoEl.addEventListener("input", onSlide);
+  tHiEl.addEventListener("input", onSlide);
+
+  /* ---------- filtering ---------- */
+  function applyFilters() {
+    var lh = readSlider(), lo = lh[0], hi = lh[1];
+    entries.forEach(function (en) {
+      var p = en.p;
+      var pass = sessOn[p[CI.sess]] !== false && p[CI.t] >= lo && p[CI.t] <= hi + 0.999;
+      if (pass && !en.shown) { styleMarker(en); trackLayer.addLayer(en.m); en.shown = true; }
+      else if (!pass && en.shown) { trackLayer.removeLayer(en.m); en.shown = false; }
+      else if (pass && en.shown) { /* keep */ }
+    });
+  }
+
+  /* initial draw */
+  updateTimeUI();
+  applyFilters();
+
+  /* ---------- panel toggle (mobile collapse) ---------- */
+  var panel = document.getElementById("panel");
+  document.getElementById("panelToggle").addEventListener("click", function () {
+    panel.classList.toggle("hidden");
+  });
+  if (window.innerWidth < 640) panel.classList.add("hidden");
+
+  /* ---------- info modal ---------- */
+  var modalBack = document.getElementById("modalBack");
+  document.getElementById("infoBtn").addEventListener("click", function () { modalBack.classList.add("open"); });
+  document.getElementById("modalClose").addEventListener("click", function () { modalBack.classList.remove("open"); });
+  modalBack.addEventListener("click", function (e) { if (e.target === modalBack) modalBack.classList.remove("open"); });
+
+  /* small debug/scripting handle (not used by the UI itself) */
+  window.MARWIS = { map: map, entries: entries, applyFilters: applyFilters, popupHtml: popupHtml };
+})();
+</script>
+</body>
+</html>
