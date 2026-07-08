@@ -169,7 +169,7 @@
 <div id="map"></div>
 
 <button id="panelToggle" aria-label="Toggle filter panel">&#9776; Filters</button>
-<div id="panel">
+<div id="panel" class="hidden">
   <h2>Channel</h2>
   <div id="channelBox"></div>
   <h2>Sessions</h2>
@@ -543,7 +543,7 @@
   document.getElementById("panelToggle").addEventListener("click", function () {
     panel.classList.toggle("hidden");
   });
-  if (window.innerWidth < 640) panel.classList.add("hidden");
+  /* panel starts collapsed (class="hidden" in markup); the Filters button opens it */
 
   /* ---------- info modal ---------- */
   var modalBack = document.getElementById("modalBack");
